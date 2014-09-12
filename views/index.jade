@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  h1= title
+  p Welcome to #{title}
+  p#update
+  script(src='/socket.io/socket.io.js')
+  script.
+    var socket = io();
+    socket.on('update', function(update){
+      document.getElementById('update').innerHTML = update;
+    });

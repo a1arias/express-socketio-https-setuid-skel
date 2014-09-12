@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+var debug = require('debug')('httpssetuid');
+var app = require('../app');
+var http = require('http');
+var https = require('https');
+var fs = require('fs');
+var exec = require('child_process').exec;
+var EventEmitter = require('events').EventEmitter;
+var ioServer = require('socket.io');
+
+var startupItems = [];
+startupItems.httpServerReady = false;
+startupItems.httpsServerReady = false;
+
+var ee = new EventEmitter();
+
+ee.on('ready', function(arg) {
+  startupItems[arg] = true;
+  if (startupItems.httpServerReady && startupItems.httpsServerReady) {
+    var id = exec('id -u ' + process.env.SUDO_UID, function(error, stdout, stderr) {
+      if(error || stderr) throw new Error(error || stderr);
+      var uid = parseInt(stdout);
+      process.setuid(uid);
+      console.log('de-escalated privileges. now running as %d', uid);
+      setInterval(function cb(){
+        var rnd = Math.random();
+        console.log('emitting update: %d', rnd);
+        io.emit('update', rnd);
+      }, 5000);
+    });
+  };
+});
+
+app.set('http_port', process.env.PORT || 80);
+app.set('https_port', process.env.HTTPS_PORT || 443);
+
+var httpServer = http.createServer(app);
+
+var opts = {
+  pfx: fs.readFileSync('httpssetuid.pfx')
+};
+var httpsServer = https.createServer(opts, app);
+
+var io = new ioServer();
+
+httpServer.listen(app.get('http_port'), function(){
+  console.log('httpServer listening on port %d', app.get('http_port'));
+  ee.emit('ready', 'httpServerReady');
+});
+
+httpsServer.listen(app.get('https_port'), function(){
+  console.log('httpsServer listening on port %d', app.get('https_port'));
+  ee.emit('ready', 'httpsServerReady');
+});
+
+io.attach(httpServer);
+io.attach(httpsServer);
+
+io.on('connection', function(socket){
+  console.log('socket connected: %s', socket.id);
+});
